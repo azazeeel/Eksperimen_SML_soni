@@ -1,44 +1,74 @@
-from flask import Flask, jsonify
-from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
+from flask import Flask, request, jsonify
+from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 import time
-import random
+import pandas as pd
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.datasets import load_breast_cancer
 
 app = Flask(__name__)
 
-# --- 5 METRIK UNTUK LEVEL SKILLED ---
-# 1. Total Requests (Counter)
-REQUEST_COUNT = Counter('inference_requests_total', 'Total prediksi model')
-# 2. Latency/Waktu Respon (Histogram)
-LATENCY = Histogram('inference_latency_seconds', 'Waktu latensi prediksi')
-# 3. Total Error (Counter) - Menghitung request yang gagal
-ERROR_COUNT = Counter('inference_errors_total', 'Total prediksi error/gagal')
-# 4. Akurasi Model (Gauge) - Simulasi fluktuasi akurasi model
-ACCURACY_ESTIMATE = Gauge('model_accuracy_estimate', 'Estimasi akurasi model saat ini')
-# 5. Request Aktif (Gauge) - Request yang sedang diproses detik ini
-ACTIVE_REQUESTS = Gauge('active_requests', 'Jumlah request yang sedang berjalan')
+# =====================================================================
+# 1. PERSIAPAN MODEL NYATA (Bukan Simulasi)
+# =====================================================================
+print("Memuat dan menyiapkan model Machine Learning...")
+data = load_breast_cancer()
+X = pd.DataFrame(data.data, columns=data.feature_names)
+y = pd.Series(data.target)
 
+# Melatih model ringan sebagai backend prediksi nyata
+model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
+model.fit(X, y)
+print("Model siap melayani request API!")
+
+# =====================================================================
+# 2. DEFINISI 5 METRIK NYATA (Memenuhi Syarat Skilled)
+# =====================================================================
+REQUEST_COUNT = Counter('inference_requests_total', 'Total request ke endpoint')
+ERROR_COUNT = Counter('inference_errors_total', 'Total request yang gagal/error')
+LATENCY = Histogram('inference_latency_seconds', 'Waktu komputasi nyata prediksi')
+PREDICT_MALIGNANT = Counter('inference_malignant_total', 'Total prediksi Ganas (Malignant)')
+PREDICT_BENIGN = Counter('inference_benign_total', 'Total prediksi Jinak (Benign)')
+
+# =====================================================================
+# 3. ENDPOINT INFERENCE
+# =====================================================================
 @app.route('/predict', methods=['POST'])
 def predict():
-    ACTIVE_REQUESTS.inc() # Tambah request aktif
-    start = time.time()
+    start_time = time.time()
     REQUEST_COUNT.inc()
-    
-    time.sleep(random.uniform(0.1, 0.4)) # Simulasi latensi AI
-    
-    # Simulasi kadang-kadang terjadi error (10% peluang gagal)
-    if random.random() < 0.1:
+
+    try:
+        # Menerima data asli dari request POST
+        json_data = request.get_json()
+        if not json_data or 'features' not in json_data:
+            raise ValueError("Data fitur 'features' tidak ditemukan pada request")
+        
+        # Melakukan prediksi nyata dengan model
+        features_df = pd.DataFrame([json_data['features']], columns=data.feature_names)
+        prediction_result = model.predict(features_df)[0]
+        
+        # Mencatat hasil prediksi nyata ke Prometheus
+        if prediction_result == 0:
+            PREDICT_MALIGNANT.inc()
+            label = "Malignant"
+        else:
+            PREDICT_BENIGN.inc()
+            label = "Benign"
+
+        # Mengukur latensi komputasi nyata (tanpa time.sleep)
+        latency = time.time() - start_time
+        LATENCY.observe(latency)
+
+        return jsonify({
+            "prediction": label,
+            "latency_seconds": latency,
+            "status": "success"
+        })
+
+    except Exception as e:
+        # Jika terjadi error (misal format data salah), catat sebagai error
         ERROR_COUNT.inc()
-        ACTIVE_REQUESTS.dec()
-        return jsonify({"status": "error", "message": "Simulasi gagal memproses data"}), 500
-    
-    # Simulasi fluktuasi akurasi (berubah-ubah antara 85% - 99%)
-    ACCURACY_ESTIMATE.set(random.uniform(0.85, 0.99))
-    
-    latency = time.time() - start
-    LATENCY.observe(latency)
-    ACTIVE_REQUESTS.dec() # Kurangi request aktif karena sudah selesai
-    
-    return jsonify({"prediction": random.choice(["Malignant", "Benign"]), "status": "success"})
+        return jsonify({"status": "error", "message": str(e)}), 400
 
 @app.route('/metrics')
 def metrics():
