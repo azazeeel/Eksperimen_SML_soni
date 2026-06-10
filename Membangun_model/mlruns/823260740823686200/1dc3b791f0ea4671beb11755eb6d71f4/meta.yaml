@@ -1,0 +1,15 @@
+artifact_uri: file:///C:/Users/sonif/Documents/MLPOS/FP/SMSML_SONI/Membangun_model/mlruns/823260740823686200/1dc3b791f0ea4671beb11755eb6d71f4/artifacts
+end_time: 1781079678815
+entry_point_name: ''
+experiment_id: '823260740823686200'
+lifecycle_stage: active
+run_id: 1dc3b791f0ea4671beb11755eb6d71f4
+run_name: Basic_Training_Autolog
+run_uuid: 1dc3b791f0ea4671beb11755eb6d71f4
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1781079666002
+status: 3
+tags: []
+user_id: sonif
